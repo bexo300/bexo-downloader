@@ -175,7 +175,7 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text and action not in ["📎 دمج ملفات PDF", "🖼️ تحويل صور لـ PDF"]:
         user_data[user_id]["val1"] = text.strip()
         return await process_action(update, context)
-#١
+
     await update.message.reply_text(
         f"✅ تم استلام الملف | العدد: {len(user_data[user_id]['files'])}\nاختر ما تريد: ",
         reply_markup=action_markup
@@ -189,6 +189,7 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     files = data["files"]
     val1 = data.get("val1", "")
     output_path = ""
+    output_filename = ""
 
     if not files:
         await update.message.reply_text("❌ لم يتم إرسال أي ملف!")
@@ -203,21 +204,24 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             writer = PdfWriter()
             for f in files:
                 writer.append(f)
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملفات_مدمجة.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
         # ========== تحويل صور لـ PDF ==========
         elif action == "🖼️ تحويل صور لـ PDF":
             img_list = [Image.open(f).convert("RGB") for f in files]
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "صور_محولة_لـ_PDF.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             img_list[0].save(output_path, save_all=True, append_images=img_list[1:])
 
         # ========== استخراج صور من PDF ==========
         elif action == "📸 استخراج صور من PDF":
             reader = PdfReader(files[0])
-            zip_path = tempfile.mktemp(suffix=".zip")
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            output_filename = "صور_مستخرجة.zip"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, page in enumerate(reader.pages):
                     for j, img in enumerate(page.images):
                         ext = img.name.split(".")[-1]
@@ -226,7 +230,6 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             f.write(img.data)
                         zf.write(img_path, arcname=f"صفحة_{i+1}_صورة_{j+1}.{ext}")
                         os.remove(img_path)
-            output_path = zip_path
 
         # ========== ترقيم الصفحات ==========
         elif action == "🔢 ترقيم صفحات PDF":
@@ -234,11 +237,12 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             writer = PdfWriter()
             for num, page in enumerate(reader.pages, start=1):
                 watermark = AnnotationBuilder.text(
-                    text=str(num), position=(250, 10), font_size=14
+                    text=str(num), xy=(250, 10), font_size=14
                 ).get_page()
                 page.merge_page(watermark)
                 writer.add_page(page)
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_مرقم_الصفحات.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -255,7 +259,8 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     idx = int(part) - 1
                     if 0 <= idx < len(reader.pages):
                         writer.add_page(reader.pages[idx])
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_مقسم_مستخرج.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -267,7 +272,8 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for num, page in enumerate(reader.pages, start=1):
                 if num not in del_pages:
                     writer.add_page(page)
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_بعد_حذف_الصفحات.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -282,7 +288,8 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for page in reader.pages:
                 page.rotate(deg)
                 writer.add_page(page)
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_مدور_الصفحات.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -292,15 +299,17 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             writer = PdfWriter()
             for page in reader.pages:
                 writer.add_page(page)
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_مضغوط.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
         # ========== تحويل PDF لصور ==========
         elif action == "🖼️ تحويل PDF لصور":
             doc = fitz.open(files[0])
-            zip_path = tempfile.mktemp(suffix=".zip")
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            output_filename = "صفحات_محولة_لصور.zip"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, page in enumerate(doc):
                     pix = page.get_pixmap(dpi=200)
                     img_path = tempfile.mktemp(suffix=".jpg")
@@ -308,19 +317,19 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     zf.write(img_path, arcname=f"صفحة_{i+1}.jpg")
                     os.remove(img_path)
             doc.close()
-            output_path = zip_path
 
         # ========== علامة مائية ==========
         elif action == "💧 علامة مائية":
             reader = PdfReader(files[0])
             writer = PdfWriter()
             watermark = AnnotationBuilder.text(
-                text=val1, position=(200, 300), font_size=25, color=(0, 0, 0, 0.2)
+                text=val1, xy=(200, 300), font_size=25, color=(0, 0, 0, 0.2)
             ).get_page()
             for page in reader.pages:
                 page.merge_page(watermark)
                 writer.add_page(page)
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_بعلامة_مائية.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -347,7 +356,8 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 idx = num - 1
                 if 0 <= idx < len(reader.pages):
                     writer.add_page(reader.pages[idx])
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_معاد_الترتيب.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -358,7 +368,8 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for page in reader.pages:
                 writer.add_page(page)
             writer.encrypt(val1, val1, algorithm="AES-256")
-            output_path = tempfile.mktemp(suffix=".pdf")
+            output_filename = "ملف_محمي_بكلمة_مرور.pdf"
+            output_path = os.path.join(tempfile.gettempdir(), output_filename)
             writer.write(output_path)
             writer.close()
 
@@ -372,7 +383,8 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 writer = PdfWriter()
                 for page in reader.pages:
                     writer.add_page(page)
-                output_path = tempfile.mktemp(suffix=".pdf")
+                output_filename = "ملف_بدون_حماية.pdf"
+                output_path = os.path.join(tempfile.gettempdir(), output_filename)
                 writer.write(output_path)
                 writer.close()
             except WrongPasswordError:
@@ -381,12 +393,13 @@ async def process_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # إرسال النتيجة
         if output_path and os.path.exists(output_path):
-            caption = "✅ تمت العملية بنجاح!"
+            caption = f"✅ تمت العملية بنجاح!\nاسم الملف: {output_filename}"
             if output_path.endswith(".zip"):
-                caption = "✅ تمت العملية | الملفات مضغوطة داخل الملف المرفق"
+                caption = f"✅ تمت العملية بنجاح!\nاسم الملف المضغوط: {output_filename}"
             await update.message.reply_document(
                 document=open(output_path, "rb"),
                 caption=caption,
+                filename=output_filename,
                 reply_markup=main_markup
             )
 
