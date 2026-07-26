@@ -163,7 +163,7 @@ def main():
     )
     app.add_handler(conv)
     app.add_error_handler(global_error_handler)
-    app.job_queue.run_repeating(cleanup_task, interval=Config.CLEANUP_INTERVAL)
+   # app.job_queue.run_repeating(cleanup_task, interval=Config.CLEANUP_INTERVAL)
     logger.info("🚀 بوت PDF الاحترافي يعمل الآن!")
     app.run_polling(drop_pending_updates=True)
 
