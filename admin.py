@@ -1,13 +1,16 @@
-# admin.py - إضافة دوال إدارة القنوات
+# admin.py - النسخة المصححة
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 from config import Config
 from utils import logger
 
 CHANNELS_FILE = Path(Config.TEMP_DIR).parent / "channels.json"
+
+# ✅ إضافة حالة جديدة لمحادثة إضافة القناة
+ADD_CHANNEL = 10
 
 class AdminSystem:
     @staticmethod
@@ -75,7 +78,7 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     if action == "admin_close":
         await query.edit_message_text("✅ تم الإغلاق")
-        return
+        return ConversationHandler.END
     
     elif action == "admin_list_channels":
         channels = AdminSystem.get_channels()
@@ -87,14 +90,17 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         return
     
     elif action == "admin_add_channel":
+        # ✅ حفظ الحالة في context.user_data
+        context.user_data['admin_action'] = 'add_channel'
+        
         await query.edit_message_text(
             "📝 **إضافة قناة جديدة**\n\n"
-            "أرسل معرف القناة:\n"
+            "أرسل معرف القناة بالصيغة التالية:\n"
             "مثال: `@bexo50`\n\n"
             "لإلغاء العملية أرسل /cancel",
             parse_mode="Markdown"
         )
-        return "ADD_CHANNEL"
+        return ADD_CHANNEL
     
     elif action == "admin_remove_channel":
         channels = AdminSystem.get_channels()
@@ -131,3 +137,84 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     elif action == "admin_back":
         await admin_panel(update, context)
         return
+
+# ✅ دالة معالجة إضافة القناة
+async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالج إضافة قناة جديدة"""
+    user_id = update.effective_user.id
+    
+    if not AdminSystem.is_admin(user_id):
+        await update.message.reply_text("❌ غير مصرح!")
+        return ConversationHandler.END
+    
+    channel_input = update.message.text.strip()
+    
+    if channel_input == "/cancel":
+        await update.message.reply_text("✅ تم إلغاء العملية", reply_markup=MAIN_MENU)
+        return ConversationHandler.END
+    
+    # ✅ تنظيف معرف القناة
+    channel = channel_input.replace("@", "").strip()
+    
+    # ✅ التحقق من صحة القناة
+    if not channel:
+        await update.message.reply_text(
+            "❌ معرف القناة غير صالح!\n"
+            "أرسل معرف القناة بالصيغة: `@username`\n"
+            "مثال: `@bexo50`",
+            parse_mode="Markdown"
+        )
+        return ADD_CHANNEL
+    
+    try:
+        # ✅ محاولة جلب معلومات القناة للتأكد من وجودها
+        chat = await context.bot.get_chat(f"@{channel}")
+        
+        # ✅ التأكد من أن البوت مشرف في القناة
+        try:
+            bot_member = await context.bot.get_chat_member(
+                chat_id=f"@{channel}",
+                user_id=context.bot.id
+            )
+            
+            # ✅ التحقق من صلاحيات البوت في القناة
+            if bot_member.status not in ["administrator", "creator"]:
+                await update.message.reply_text(
+                    f"⚠️ البوت ليس مشرفاً في القناة @{channel}!\n"
+                    "يرجى إضافة البوت كمشرف في القناة ثم حاول مرة أخرى."
+                )
+                return ADD_CHANNEL
+                
+        except Exception as e:
+            await update.message.reply_text(
+                f"⚠️ لا يمكن التحقق من صلاحيات البوت في القناة @{channel}!\n"
+                "تأكد من أن البوت مشرف في القناة."
+            )
+            return ADD_CHANNEL
+        
+        # ✅ إضافة القناة
+        channels = AdminSystem.get_channels()
+        if channel in channels:
+            await update.message.reply_text(f"⚠️ القناة @{channel} موجودة بالفعل!")
+        else:
+            channels.append(channel)
+            AdminSystem.save_channels(channels)
+            await update.message.reply_text(
+                f"✅ تم إضافة القناة @{channel} بنجاح!\n\n"
+                f"📢 سيُطلب من المستخدمين الاشتراك في القناة لاستخدام البوت."
+            )
+        
+        # ✅ عرض لوحة التحكم بعد الإضافة
+        await admin_panel(update, context)
+        return ConversationHandler.END
+        
+    except Exception as e:
+        logger.error(f"خطأ في إضافة القناة: {e}")
+        await update.message.reply_text(
+            f"❌ حدث خطأ: {str(e)[:200]}\n\n"
+            "تأكد من أن:\n"
+            "1️⃣ معرف القناة صحيح\n"
+            "2️⃣ البوت مشرف في القناة\n"
+            "3️⃣ القناة عامة (Public)"
+        )
+        return ADD_CHANNEL
