@@ -1,4 +1,4 @@
-# admin.py - النسخة المصححة
+# admin.py
 import json
 from pathlib import Path
 from typing import List, Optional
@@ -8,8 +8,6 @@ from config import Config
 from utils import logger
 
 CHANNELS_FILE = Path(Config.TEMP_DIR).parent / "channels.json"
-
-# ✅ إضافة حالة جديدة لمحادثة إضافة القناة
 ADD_CHANNEL = 10
 
 class AdminSystem:
@@ -38,8 +36,11 @@ class AdminSystem:
         return user_id in Config.ADMINS
     
     @staticmethod
-    def get_channels() -> List[str]:
-        return Config.FORCED_CHANNELS or AdminSystem.load_channels()
+    def get_all_channels() -> List[str]:
+        """الحصول على جميع القنوات (الثابتة + الإضافية)"""
+        channels = [Config.FORCED_CHANNEL] if Config.FORCED_CHANNEL else []
+        channels += Config.FORCED_CHANNELS
+        return list(dict.fromkeys(channels))
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -47,12 +48,25 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ هذا الأمر مخصص للمشرفين فقط!")
         return
     
-    channels = AdminSystem.get_channels()
-    channels_list = "\n".join([f"• @{ch}" for ch in channels]) if channels else "لا توجد قنوات"
+    # ✅ عرض القنوات (الثابتة + الإضافية)
+    all_channels = AdminSystem.get_all_channels()
+    forced_channel = Config.FORCED_CHANNEL
+    
+    channels_list = ""
+    if forced_channel:
+        channels_list += f"• @{forced_channel} ✅ (ثابتة)\n"
+    
+    extra_channels = AdminSystem.load_channels()
+    for ch in extra_channels:
+        channels_list += f"• @{ch}\n"
+    
+    if not channels_list:
+        channels_list = "لا توجد قنوات"
     
     message = (
         "👑 **لوحة تحكم المشرف**\n\n"
         f"📢 **قنوات الاشتراك الإجباري:**\n{channels_list}\n\n"
+        f"🔒 القناة الثابتة: @{forced_channel if forced_channel else 'لا توجد'}\n\n"
         "🔧 الأوامر المتاحة:"
     )
     
@@ -81,35 +95,46 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         return ConversationHandler.END
     
     elif action == "admin_list_channels":
-        channels = AdminSystem.get_channels()
-        if channels:
-            text = "📋 **قائمة القنوات:**\n\n" + "\n".join([f"• @{ch}" for ch in channels])
-        else:
+        all_channels = AdminSystem.get_all_channels()
+        forced_channel = Config.FORCED_CHANNEL
+        
+        text = "📋 **قائمة القنوات:**\n\n"
+        if forced_channel:
+            text += f"✅ @{forced_channel} (ثابتة)\n"
+        
+        extra = AdminSystem.load_channels()
+        for ch in extra:
+            text += f"• @{ch}\n"
+        
+        if not all_channels:
             text = "📭 لا توجد قنوات مسجلة"
+        
         await query.edit_message_text(text, parse_mode="Markdown")
         return
     
     elif action == "admin_add_channel":
-        # ✅ حفظ الحالة في context.user_data
         context.user_data['admin_action'] = 'add_channel'
         
         await query.edit_message_text(
             "📝 **إضافة قناة جديدة**\n\n"
             "أرسل معرف القناة بالصيغة التالية:\n"
             "مثال: `@bexo50`\n\n"
+            "📌 ملاحظة: القناة @bexo50 ثابتة ولا يمكن حذفها\n\n"
             "لإلغاء العملية أرسل /cancel",
             parse_mode="Markdown"
         )
         return ADD_CHANNEL
     
     elif action == "admin_remove_channel":
-        channels = AdminSystem.get_channels()
-        if not channels:
-            await query.edit_message_text("📭 لا توجد قنوات لحذفها!")
+        extra_channels = AdminSystem.load_channels()
+        forced_channel = Config.FORCED_CHANNEL
+        
+        if not extra_channels:
+            await query.edit_message_text("📭 لا توجد قنوات إضافية لحذفها!\n\nالقناة الثابتة لا يمكن حذفها.")
             return
         
         keyboard = []
-        for channel in channels:
+        for channel in extra_channels:
             keyboard.append([InlineKeyboardButton(
                 f"❌ حذف @{channel}",
                 callback_data=f"remove_{channel}"
@@ -117,7 +142,8 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         keyboard.append([InlineKeyboardButton("⬅️ رجوع", callback_data="admin_back")])
         
         await query.edit_message_text(
-            "🗑️ **اختر القناة لحذفها:**",
+            "🗑️ **اختر القناة لحذفها:**\n\n"
+            f"🔒 القناة الثابتة @{forced_channel} لا يمكن حذفها",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
@@ -125,10 +151,19 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     elif action.startswith("remove_"):
         channel = action.replace("remove_", "")
-        channels = AdminSystem.get_channels()
-        if channel in channels:
-            channels.remove(channel)
-            AdminSystem.save_channels(channels)
+        
+        # ✅ منع حذف القناة الثابتة
+        if channel == Config.FORCED_CHANNEL:
+            await query.edit_message_text(
+                f"❌ لا يمكن حذف القناة الثابتة @{channel}!\n"
+                "هذه القناة مضبوطة بشكل دائم."
+            )
+            return
+        
+        extra_channels = AdminSystem.load_channels()
+        if channel in extra_channels:
+            extra_channels.remove(channel)
+            AdminSystem.save_channels(extra_channels)
             await query.edit_message_text(f"✅ تم حذف القناة @{channel}!")
         else:
             await query.edit_message_text("❌ القناة غير موجودة!")
@@ -138,7 +173,6 @@ async def admin_callback_handler(update: Update, context: ContextTypes.DEFAULT_T
         await admin_panel(update, context)
         return
 
-# ✅ دالة معالجة إضافة القناة
 async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """معالج إضافة قناة جديدة"""
     user_id = update.effective_user.id
@@ -156,7 +190,6 @@ async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     # ✅ تنظيف معرف القناة
     channel = channel_input.replace("@", "").strip()
     
-    # ✅ التحقق من صحة القناة
     if not channel:
         await update.message.reply_text(
             "❌ معرف القناة غير صالح!\n"
@@ -166,8 +199,16 @@ async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return ADD_CHANNEL
     
+    # ✅ منع إضافة القناة الثابتة مرة أخرى
+    if channel == Config.FORCED_CHANNEL:
+        await update.message.reply_text(
+            f"⚠️ القناة @{channel} هي القناة الثابتة!\n"
+            "تم إضافتها بشكل دائم ولا تحتاج لإضافتها مرة أخرى."
+        )
+        return ADD_CHANNEL
+    
     try:
-        # ✅ محاولة جلب معلومات القناة للتأكد من وجودها
+        # ✅ التحقق من وجود القناة
         chat = await context.bot.get_chat(f"@{channel}")
         
         # ✅ التأكد من أن البوت مشرف في القناة
@@ -177,7 +218,6 @@ async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
                 user_id=context.bot.id
             )
             
-            # ✅ التحقق من صلاحيات البوت في القناة
             if bot_member.status not in ["administrator", "creator"]:
                 await update.message.reply_text(
                     f"⚠️ البوت ليس مشرفاً في القناة @{channel}!\n"
@@ -193,18 +233,19 @@ async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             return ADD_CHANNEL
         
         # ✅ إضافة القناة
-        channels = AdminSystem.get_channels()
-        if channel in channels:
+        extra_channels = AdminSystem.load_channels()
+        if channel in extra_channels:
             await update.message.reply_text(f"⚠️ القناة @{channel} موجودة بالفعل!")
         else:
-            channels.append(channel)
-            AdminSystem.save_channels(channels)
+            extra_channels.append(channel)
+            AdminSystem.save_channels(extra_channels)
             await update.message.reply_text(
                 f"✅ تم إضافة القناة @{channel} بنجاح!\n\n"
-                f"📢 سيُطلب من المستخدمين الاشتراك في القناة لاستخدام البوت."
+                f"📢 سيُطلب من المستخدمين الاشتراك في:\n"
+                f"• @{Config.FORCED_CHANNEL} (ثابتة)\n"
+                f"• @{channel} (جديدة)"
             )
         
-        # ✅ عرض لوحة التحكم بعد الإضافة
         await admin_panel(update, context)
         return ConversationHandler.END
         
@@ -218,3 +259,6 @@ async def add_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             "3️⃣ القناة عامة (Public)"
         )
         return ADD_CHANNEL
+
+# ✅ استيراد MAIN_MENU من keyboards
+from keyboards import MAIN_MENU
