@@ -15,7 +15,7 @@ import fitz
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import WrongPasswordError
-from pypdf.annotations import FreeText  # ✅ الاستيراد الجديد الصحيح
+from pypdf.annotations import FreeText
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, filters,
@@ -94,7 +94,7 @@ def validate_password(password: str) -> bool:
     return bool(password and len(password.strip()) >= 4)
 
 # ==============================================
-# 👤 إدارة جلسات المستخدمين
+# 👤 إدارة جلسات المستخدمين - أضفنا حقل اسم الملف
 # ==============================================
 @dataclass
 class UserSession:
@@ -103,6 +103,8 @@ class UserSession:
     temp_dirs: List[str] = field(default_factory=list)
     action: Optional[str] = None
     val1: Optional[str] = None
+    custom_name: Optional[str] = None  # ✅ اسم الملف المخصص
+    expecting_name: bool = False        # ✅ علامة انتظار الاسم
 
     def add_file(self, file_path: str, temp_dir: str = None):
         self.files.append(file_path)
@@ -118,6 +120,8 @@ class UserSession:
         self.files.clear()
         self.temp_dirs.clear()
         self.val1 = None
+        self.custom_name = None
+        self.expecting_name = False
 
     def reset(self):
         self.cleanup()
@@ -139,7 +143,7 @@ class FileManager:
         return tempfile.mktemp(suffix=suffix, dir=Config.TEMP_DIR)
 
 # ==============================================
-# ⚙️ معالج ملفات PDF - تم تصليح الدوال بالكامل
+# ⚙️ معالج ملفات PDF
 # ==============================================
 class PDFProcessor:
     @staticmethod
@@ -170,19 +174,15 @@ class PDFProcessor:
         buf.seek(0)
         return buf.getvalue()
 
-    # ✅ دالة ترقيم الصفحات - مُصلحة بالكامل
     @staticmethod
     def add_page_numbers(path: str) -> str:
         reader = PdfReader(path)
         writer = PdfWriter()
         for num, page in enumerate(reader.pages, start=1):
             annotation = FreeText(
-                text=str(num),
-                rect=(240, 5, 270, 25),
-                font_size="14pt",
-                font_color="000000",
-                border_color=None,
-                background_color=None
+                text=str(num), rect=(240, 5, 270, 25),
+                font_size="14pt", font_color="000000",
+                border_color=None, background_color=None
             )
             annotation.flags = 4
             writer.add_page(page)
@@ -250,19 +250,15 @@ class PDFProcessor:
         buf.seek(0)
         return buf.getvalue()
 
-    # ✅ دالة العلامة المائية - مُصلحة بالكامل
     @staticmethod
     def add_watermark(path: str, text: str) -> str:
         reader = PdfReader(path)
         writer = PdfWriter()
         for page in reader.pages:
             annotation = FreeText(
-                text=text,
-                rect=(150, 380, 350, 420),
-                font_size="30pt",
-                font_color="000000",
-                border_color=None,
-                background_color=None
+                text=text, rect=(150, 380, 350, 420),
+                font_size="30pt", font_color="000000",
+                border_color=None, background_color=None
             )
             annotation.flags = 4
             writer.add_page(page)
@@ -314,7 +310,7 @@ class PDFProcessor:
         return out
 
 # ==============================================
-# 🎛️ معالج أوامر البوت
+# 🎛️ معالج أوامر البوت - معدل لدعم تسمية الملف
 # ==============================================
 MAIN_MENU = [
     ["📎 دمج ملفات PDF", "🖼️ تحويل صور لـ PDF"],
@@ -328,6 +324,24 @@ MAIN_MENU = [
 ]
 MAIN_KB = ReplyKeyboardMarkup(MAIN_MENU, resize_keyboard=True)
 ACTION_KB = ReplyKeyboardMarkup([["✅ إنهاء وإجراء العملية", "➕ إضافة ملفات أخرى"]], resize_keyboard=True)
+
+# أسماء الملفات الافتراضية لكل ميزة
+DEFAULT_NAMES = {
+    "📎 دمج ملفات PDF": "ملفات_مدمجة.pdf",
+    "🖼️ تحويل صور لـ PDF": "صور_محولة.pdf",
+    "📸 استخراج صور من PDF": "صور_مستخرجة.zip",
+    "🔢 ترقيم صفحات PDF": "ملف_مرقم.pdf",
+    "✂️ تقسيم PDF": "ملف_مقسم.pdf",
+    "🗑️ حذف صفحات من PDF": "ملف_بعد_الحذف.pdf",
+    "📄 استخراج صفحات من PDF": "ملف_مستخرج.pdf",
+    "🔄 تدوير صفحات PDF": "ملف_مدور.pdf",
+    "📉 ضغط حجم PDF": "ملف_مضغوط.pdf",
+    "🖼️ تحويل PDF لصور": "صفحات_صور.zip",
+    "💧 علامة مائية": "ملف_بعلامة.pdf",
+    "🔃 إعادة ترتيب": "ملف_مرتب.pdf",
+    "🔒 حماية بكلمة مرور": "ملف_محمي.pdf",
+    "🔓 إزالة الحماية": "ملف_بدون_حماية.pdf"
+}
 
 PROMPTS = {
     "📎 دمج ملفات PDF": "أرسل ملفات PDF واحدة تلو الأخرى، ثم اختر إنهاء",
@@ -349,7 +363,7 @@ PROMPTS = {
 }
 
 user_sessions = {}
-CHECK_SUB, SELECT_ACTION, WAIT_FILE = range(3)
+CHECK_SUB, SELECT_ACTION, WAIT_FILE, WAIT_NAME = range(4)  # ✅ أضفنا حالة انتظار الاسم
 
 async def check_sub(user_id: int, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
@@ -400,12 +414,27 @@ async def receive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not s or not s.action:
         await update.message.reply_text("اختر ميزة أولاً", reply_markup=MAIN_KB)
         return SELECT_ACTION
+
+    # ✅ إذا كنا ننتظر اسم الملف
+    if s.expecting_name:
+        name = update.message.text.strip()
+        if name:
+            s.custom_name = name
+        else:
+            s.custom_name = None
+        return await process(update, ctx, s)
+
     txt = update.message.text
     if txt == "✅ إنهاء وإجراء العملية":
-        return await process(update, ctx, s)
+        # ✅ بعد الضغط على إنهاء اسأل عن الاسم
+        await update.message.reply_text("📝 أرسل اسم الملف الجديد (أو اضغط إرسال مباشرة لاستخدام الاسم الافتراضي):")
+        s.expecting_name = True
+        return WAIT_NAME
+
     if txt == "➕ إضافة ملفات أخرى":
         await update.message.reply_text("أرسل المزيد ثم اختر إنهاء")
         return WAIT_FILE
+
     if update.message.document:
         doc = update.message.document
         if doc.file_size > Config.MAX_FILE_SIZE:
@@ -419,6 +448,7 @@ async def receive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         s.add_file(path, d)
         await update.message.reply_text(f"✅ تم استلام | العدد: {len(s.files)}", reply_markup=ACTION_KB)
         return WAIT_FILE
+
     if update.message.photo:
         ph = update.message.photo[-1]
         if ph.file_size > Config.MAX_FILE_SIZE:
@@ -429,9 +459,13 @@ async def receive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         s.add_file(path, d)
         await update.message.reply_text(f"✅ تم استلام الصورة | العدد: {len(s.files)}", reply_markup=ACTION_KB)
         return WAIT_FILE
+
     if txt:
         s.val1 = txt.strip()
-        return await process(update, ctx, s)
+        await update.message.reply_text("📝 أرسل اسم الملف الجديد (أو اضغط إرسال مباشرة لاستخدام الاسم الافتراضي):")
+        s.expecting_name = True
+        return WAIT_NAME
+
     await update.message.reply_text("أرسل ملف أو نص صحيح")
     return WAIT_FILE
 
@@ -442,52 +476,68 @@ async def process(update: Update, ctx: ContextTypes.DEFAULT_TYPE, s: UserSession
     try:
         act = s.action
         res = None
+        # ✅ تحديد اسم الملف النهائي
+        def_name = DEFAULT_NAMES.get(act, "ملف_جديد.pdf")
+        if s.custom_name:
+            # إضافة الامتداد تلقائياً إذا لم يضفه المستخدم
+            if def_name.endswith(".pdf") and not s.custom_name.lower().endswith(".pdf"):
+                final_name = s.custom_name + ".pdf"
+            elif def_name.endswith(".zip") and not s.custom_name.lower().endswith(".zip"):
+                final_name = s.custom_name + ".zip"
+            else:
+                final_name = s.custom_name
+        else:
+            final_name = def_name
+
         if act == "📎 دمج ملفات PDF":
             if len(s.files) < 2: raise ValueError("مطلوب ملفان على الأقل")
-            res = {"p": await asyncio.to_thread(PDFProcessor.merge_pdfs, s.files), "n": "ملفات_مدمجة.pdf", "c": "✅ تم الدمج"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.merge_pdfs, s.files), "n": final_name, "c": "✅ تم الدمج"}
         elif act == "🖼️ تحويل صور لـ PDF":
-            res = {"p": await asyncio.to_thread(PDFProcessor.images_to_pdf, s.files), "n": "صور_محولة.pdf", "c": "✅ تم التحويل"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.images_to_pdf, s.files), "n": final_name, "c": "✅ تم التحويل"}
         elif act == "📸 استخراج صور من PDF":
             b = await asyncio.to_thread(PDFProcessor.extract_images, s.files[0])
             p = FileManager.get_temp_file(".zip")
             with open(p, "wb") as f: f.write(b)
-            res = {"p": p, "n": "صور_مستخرجة.zip", "c": "✅ تم الاستخراج"}
+            res = {"p": p, "n": final_name, "c": "✅ تم الاستخراج"}
         elif act == "🔢 ترقيم صفحات PDF":
-            res = {"p": await asyncio.to_thread(PDFProcessor.add_page_numbers, s.files[0]), "n": "ملف_مرقم.pdf", "c": "✅ تم الترقيم"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.add_page_numbers, s.files[0]), "n": final_name, "c": "✅ تم الترقيم"}
         elif act in ["✂️ تقسيم PDF", "📄 استخراج صفحات من PDF"]:
             r = PdfReader(s.files[0])
             pg = validate_page_range(s.val1, len(r.pages))
-            res = {"p": await asyncio.to_thread(PDFProcessor.split_pdf, s.files[0], pg), "n": "ملف_مقسم.pdf", "c": f"✅ {len(pg)} صفحة"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.split_pdf, s.files[0], pg), "n": final_name, "c": f"✅ {len(pg)} صفحة"}
         elif act == "🗑️ حذف صفحات من PDF":
             r = PdfReader(s.files[0])
             pg = validate_page_range(s.val1, len(r.pages))
-            res = {"p": await asyncio.to_thread(PDFProcessor.delete_pages, s.files[0], pg), "n": "ملف_بعد_الحذف.pdf", "c": f"✅ تم حذف {len(pg)} صفحة"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.delete_pages, s.files[0], pg), "n": final_name, "c": f"✅ تم حذف {len(pg)} صفحة"}
         elif act == "🔄 تدوير صفحات PDF":
-            res = {"p": await asyncio.to_thread(PDFProcessor.rotate_pages, s.files[0], int(s.val1)), "n": "ملف_مدور.pdf", "c": f"✅ دوران {s.val1}°"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.rotate_pages, s.files[0], int(s.val1)), "n": final_name, "c": f"✅ دوران {s.val1}°"}
         elif act == "📉 ضغط حجم PDF":
-            res = {"p": await asyncio.to_thread(PDFProcessor.compress_pdf, s.files[0]), "n": "ملف_مضغوط.pdf", "c": "✅ تم الضغط"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.compress_pdf, s.files[0]), "n": final_name, "c": "✅ تم الضغط"}
         elif act == "🖼️ تحويل PDF لصور":
             b = await asyncio.to_thread(PDFProcessor.pdf_to_images, s.files[0])
             p = FileManager.get_temp_file(".zip")
             with open(p, "wb") as f: f.write(b)
-            res = {"p": p, "n": "صفحات_صور.zip", "c": "✅ تم التحويل"}
+            res = {"p": p, "n": final_name, "c": "✅ تم التحويل"}
         elif act == "💧 علامة مائية":
-            res = {"p": await asyncio.to_thread(PDFProcessor.add_watermark, s.files[0], s.val1), "n": "ملف_بعلامة.pdf", "c": f"✅ تم إضافة: {s.val1}"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.add_watermark, s.files[0], s.val1), "n": final_name, "c": f"✅ تم إضافة: {s.val1}"}
         elif act == "ℹ️ معلومات الملف":
             i = await asyncio.to_thread(PDFProcessor.get_info, s.files[0])
             await update.message.reply_text(
                 f"📄 معلومات الملف:\n• الصفحات: {i['pages']}\n• العنوان: {i['title']}\n• المؤلف: {i['author']}\n• محمي: {'نعم' if i['encrypted'] else 'لا'}\n• الحجم: {i['size']//1024} كيلوبايت",
                 reply_markup=MAIN_KB
             )
+            s.cleanup()
+            s.action = None
+            return SELECT_ACTION
         elif act == "🔃 إعادة ترتيب":
             ordr = list(map(int, s.val1.replace(" ","").split(",")))
-            res = {"p": await asyncio.to_thread(PDFProcessor.reorder_pages, s.files[0], ordr), "n": "ملف_مرتب.pdf", "c": "✅ تم إعادة الترتيب"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.reorder_pages, s.files[0], ordr), "n": final_name, "c": "✅ تم إعادة الترتيب"}
         elif act == "🔒 حماية بكلمة مرور":
             if not validate_password(s.val1): raise ValueError("كلمة المرور 4 أحرف على الأقل")
-            res = {"p": await asyncio.to_thread(PDFProcessor.encrypt, s.files[0], s.val1), "n": "ملف_محمي.pdf", "c": "✅ تم الحماية"}
+            res = {"p": await asyncio.to_thread(PDFProcessor.encrypt, s.files[0], s.val1), "n": final_name, "c": "✅ تم الحماية"}
         elif act == "🔓 إزالة الحماية":
             try:
-                res = {"p": await asyncio.to_thread(PDFProcessor.decrypt, s.files[0], s.val1), "n": "ملف_بدون_حماية.pdf", "c": "✅ تم إزالة الحماية"}
+                res = {"p": await asyncio.to_thread(PDFProcessor.decrypt, s.files[0], s.val1), "n": final_name, "c": "✅ تم إزالة الحماية"}
             except WrongPasswordError:
                 raise ValueError("❌ كلمة المرور خاطئة")
 
@@ -517,13 +567,14 @@ def main():
         states={
             CHECK_SUB: [CallbackQueryHandler(verify_cb, pattern="check_sub")],
             SELECT_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)],
-            WAIT_FILE: [MessageHandler(filters.ALL & ~filters.COMMAND, receive)]
+            WAIT_FILE: [MessageHandler(filters.ALL & ~filters.COMMAND, receive)],
+            WAIT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive)]
         },
         fallbacks=[CommandHandler("start", start)],
         per_chat=True, per_user=True, per_message=False
     )
     app.add_handler(conv)
-    logger.info("🚀 البوت يعمل الآن بدون أي أخطاء نهائياً!")
+    logger.info("🚀 البوت يعمل مع خاصية تسمية الملفات لجميع الميزات!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
