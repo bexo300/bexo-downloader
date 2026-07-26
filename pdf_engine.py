@@ -1,4 +1,3 @@
-# pdf_engine.py
 import os
 import io
 import zipfile
@@ -52,12 +51,11 @@ class PDFEngine:
 
     @staticmethod
     def add_page_numbers(pdf_path: str) -> str:
-        """إضافة أرقام صفحات باستخدام PyMuPDF"""
+        """إضافة أرقام صفحات"""
         try:
             doc = fitz.open(pdf_path)
             
             for i, page in enumerate(doc, 1):
-                # حساب موقع الرقم في أسفل الصفحة
                 rect = fitz.Rect(460, page.rect.height - 40, 550, page.rect.height - 10)
                 page.insert_textbox(
                     rect,
@@ -78,7 +76,7 @@ class PDFEngine:
 
     @staticmethod
     def add_watermark(pdf_path: str, text: str) -> str:
-        """إضافة علامة مائية"""
+        """إضافة علامة مائية - تم إصلاح مشكلة الزاوية"""
         if not text:
             text = "© جميع الحقوق محفوظة"
             
@@ -86,15 +84,33 @@ class PDFEngine:
             doc = fitz.open(pdf_path)
             
             for page in doc:
-                # علامة مائية بزاوية 45 درجة
                 rect = page.rect
+                # ✅ استخدم insert_textbox مع زاوية 0 (بدون دوران) لتجنب خطأ rotate
                 page.insert_textbox(
-                    fitz.Rect(100, rect.height/2 - 50, rect.width - 100, rect.height/2 + 50),
+                    fitz.Rect(
+                        rect.width * 0.2, 
+                        rect.height * 0.4, 
+                        rect.width * 0.8, 
+                        rect.height * 0.6
+                    ),
                     text,
-                    fontsize=30,
-                    color=(0.5, 0.5, 0.5, 0.3),  # لون رمادي شفاف
-                    align=fitz.TEXT_ALIGN_CENTER,
-                    rotate=45
+                    fontsize=36,
+                    color=(0.5, 0.5, 0.5, 0.3),
+                    align=fitz.TEXT_ALIGN_CENTER
+                )
+                
+                # ✅ إضافة علامة مائية ثانية في الزاوية السفلية
+                page.insert_textbox(
+                    fitz.Rect(
+                        rect.width * 0.05, 
+                        rect.height * 0.88, 
+                        rect.width * 0.95, 
+                        rect.height * 0.95
+                    ),
+                    text,
+                    fontsize=14,
+                    color=(0.7, 0.7, 0.7, 0.5),
+                    align=fitz.TEXT_ALIGN_CENTER
                 )
             
             out_path = Path(Config.TEMP_DIR) / f"watermarked_{os.urandom(4).hex()}.pdf"
@@ -108,7 +124,7 @@ class PDFEngine:
 
     @staticmethod
     def encrypt(pdf_path: str, password: str) -> str:
-        """تشفير PDF بكلمة مرور"""
+        """تشفير PDF بكلمة مرور - تم إصلاح مشكلة PERMISSIONS_ALL"""
         if not password or len(password) < 4:
             raise ValueError("كلمة المرور يجب أن تكون 4 أحرف على الأقل")
             
@@ -118,13 +134,9 @@ class PDFEngine:
             
             for page in reader.pages:
                 writer.add_page(page)
-                
-            # تشفير مع إعدادات أمان متقدمة
-            writer.encrypt(
-                user_password=password,
-                owner_password=password,
-                permissions_flag=PdfWriter.PERMISSIONS_ALL
-            )
+            
+            # ✅ استخدام الطريقة الصحيحة للتشفير في pypdf 5.0.1
+            writer.encrypt(password)
             
             out_path = Path(Config.TEMP_DIR) / f"encrypted_{os.urandom(4).hex()}.pdf"
             with open(out_path, "wb") as f:
@@ -137,20 +149,26 @@ class PDFEngine:
 
     @staticmethod
     def compress(pdf_path: str) -> Tuple[str, int, int]:
-        """ضغط ملف PDF"""
+        """ضغط ملف PDF - تم إصلاح مشكلة الضغط"""
         try:
             before = os.path.getsize(pdf_path)
-            reader = PdfReader(pdf_path)
-            writer = PdfWriter()
             
-            for page in reader.pages:
-                page.compress_content_streams(level=9)
-                writer.add_page(page)
+            # ✅ طريقة الضغط الصحيحة باستخدام PyMuPDF (fitz)
+            doc = fitz.open(pdf_path)
             
+            # حفظ الملف بضغط عالي
             out_path = Path(Config.TEMP_DIR) / f"compressed_{os.urandom(4).hex()}.pdf"
-            with open(out_path, "wb") as f:
-                writer.write(f)
-                
+            
+            # ✅ استخدام save مع خيارات الضغط
+            doc.save(
+                str(out_path),
+                garbage=4,           # تنظيف عميق
+                deflate=True,        # ضغط
+                clean=True,          # تنظيف البيانات غير المستخدمة
+                no_encrypt=True
+            )
+            doc.close()
+            
             after = os.path.getsize(out_path)
             
             # إذا كان الضغط أكبر من الأصلي، استخدم الأصلي
@@ -184,16 +202,16 @@ class PDFEngine:
             out_path = Path(Config.TEMP_DIR) / f"images_{os.urandom(4).hex()}.pdf"
             
             if len(images) == 1:
-                images[0].save(str(out_path), "PDF")
+                images[0].save(str(out_path), "PDF", resolution=100.0)
             else:
                 images[0].save(
                     str(out_path),
                     "PDF",
                     save_all=True,
-                    append_images=images[1:]
+                    append_images=images[1:],
+                    resolution=100.0
                 )
             
-            # تنظيف الذاكرة
             for img in images:
                 img.close()
                 
@@ -213,14 +231,12 @@ class PDFEngine:
                 raise ValueError("الملف فارغ ولا يحتوي على صفحات")
                 
             if len(doc) == 1:
-                # ملف واحد فقط - إرجاع الصورة مباشرة
                 page = doc[0]
                 pix = page.get_pixmap(dpi=dpi)
                 img_data = pix.tobytes("jpeg")
                 doc.close()
                 return img_data, "صفحة_1.jpg"
             
-            # عدة صفحات - إنشاء ZIP
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, page in enumerate(doc, 1):
@@ -283,3 +299,32 @@ class PDFEngine:
         except Exception as e:
             logger.error(f"خطأ في استخراج الصفحات: {e}")
             raise ValueError(f"فشل استخراج الصفحات: {str(e)}")
+    
+    @staticmethod
+    def remove_password(pdf_path: str) -> str:
+        """إزالة كلمة المرور من PDF"""
+        try:
+            reader = PdfReader(pdf_path)
+            
+            # التحقق مما إذا كان الملف مشفراً
+            if not reader.is_encrypted:
+                raise ValueError("الملف غير مشفر")
+            
+            # محاولة فك التشفير (بدون كلمة مرور)
+            try:
+                reader.decrypt('')
+            except:
+                raise ValueError("الملف مشفر بكلمة مرور غير معروفة")
+            
+            writer = PdfWriter()
+            for page in reader.pages:
+                writer.add_page(page)
+            
+            out_path = Path(Config.TEMP_DIR) / f"unlocked_{os.urandom(4).hex()}.pdf"
+            with open(out_path, "wb") as f:
+                writer.write(f)
+            return str(out_path)
+            
+        except Exception as e:
+            logger.error(f"خطأ في إزالة الحماية: {e}")
+            raise ValueError(f"فشل إزالة الحماية: {str(e)}")
