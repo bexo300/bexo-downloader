@@ -1,12 +1,10 @@
 import os
 import re
 import time
-import shutil
 import logging
 from logging.handlers import RotatingFileHandler
-from datetime import datetime
-from config import Config
 from pathlib import Path
+from config import Config
 
 logger = logging.getLogger("pdf_bot")
 logger.setLevel(logging.INFO)
@@ -95,9 +93,12 @@ def safe_remove(file_path: str) -> bool:
         pass
     return False
 
-def ensure_dir(path: str) -> bool:
-    try:
-        os.makedirs(path, exist_ok=True)
-        return True
-    except Exception:
-        return False
+def ensure_extension(filename: str) -> str:
+    """إضافة امتداد .pdf إذا كان مفقوداً"""
+    if not filename:
+        return "ملف.pdf"
+    filename = sanitize_filename(filename)
+    known_extensions = ['.pdf', '.zip', '.jpg', '.jpeg', '.png']
+    if any(filename.lower().endswith(ext) for ext in known_extensions):
+        return filename
+    return filename + ".pdf"
