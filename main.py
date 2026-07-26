@@ -1,6 +1,7 @@
 import os
 import asyncio
 import tempfile
+import time  # ✅ مهم جداً
 from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, List
@@ -23,7 +24,9 @@ class Session:
     val1: Optional[str] = None
     custom_name: Optional[str] = None
     expecting_name: bool = False
+    # ✅ نستخدم default_factory بدلاً من القيمة مباشرة
     last_active: float = field(default_factory=time.time)
+
 
 user_sessions: dict[int, Session] = {}
 SELECT_ACTION, WAIT_FILE, WAIT_DATA, WAIT_NAME = range(4)
