@@ -1,3 +1,4 @@
+# pdf_engine.py - النسخة النهائية المصححة بالكامل
 import os
 import io
 import zipfile
@@ -56,11 +57,17 @@ class PDFEngine:
             doc = fitz.open(pdf_path)
             
             for i, page in enumerate(doc, 1):
-                rect = fitz.Rect(460, page.rect.height - 40, 550, page.rect.height - 10)
+                # تحديد موقع الرقم في أسفل الصفحة
+                rect = fitz.Rect(
+                    page.rect.width * 0.45, 
+                    page.rect.height - 40, 
+                    page.rect.width * 0.55, 
+                    page.rect.height - 10
+                )
                 page.insert_textbox(
                     rect,
                     str(i),
-                    fontsize=12,
+                    fontsize=14,
                     color=(0, 0, 0),
                     align=fitz.TEXT_ALIGN_CENTER
                 )
@@ -76,7 +83,7 @@ class PDFEngine:
 
     @staticmethod
     def add_watermark(pdf_path: str, text: str) -> str:
-        """إضافة علامة مائية - تم إصلاح مشكلة الزاوية"""
+        """إضافة علامة مائية"""
         if not text:
             text = "© جميع الحقوق محفوظة"
             
@@ -85,31 +92,32 @@ class PDFEngine:
             
             for page in doc:
                 rect = page.rect
-                # ✅ استخدم insert_textbox مع زاوية 0 (بدون دوران) لتجنب خطأ rotate
+                
+                # علامة مائية رئيسية في المنتصف
                 page.insert_textbox(
                     fitz.Rect(
-                        rect.width * 0.2, 
-                        rect.height * 0.4, 
-                        rect.width * 0.8, 
-                        rect.height * 0.6
+                        rect.width * 0.15, 
+                        rect.height * 0.35, 
+                        rect.width * 0.85, 
+                        rect.height * 0.65
                     ),
                     text,
-                    fontsize=36,
-                    color=(0.5, 0.5, 0.5, 0.3),
+                    fontsize=48,
+                    color=(0.6, 0.6, 0.6, 0.25),  # رمادي شفاف
                     align=fitz.TEXT_ALIGN_CENTER
                 )
                 
-                # ✅ إضافة علامة مائية ثانية في الزاوية السفلية
+                # علامة مائية صغيرة في الزاوية السفلية
                 page.insert_textbox(
                     fitz.Rect(
-                        rect.width * 0.05, 
-                        rect.height * 0.88, 
-                        rect.width * 0.95, 
-                        rect.height * 0.95
+                        rect.width * 0.02, 
+                        rect.height * 0.92, 
+                        rect.width * 0.98, 
+                        rect.height * 0.98
                     ),
                     text,
-                    fontsize=14,
-                    color=(0.7, 0.7, 0.7, 0.5),
+                    fontsize=10,
+                    color=(0.7, 0.7, 0.7, 0.4),
                     align=fitz.TEXT_ALIGN_CENTER
                 )
             
@@ -124,7 +132,7 @@ class PDFEngine:
 
     @staticmethod
     def encrypt(pdf_path: str, password: str) -> str:
-        """تشفير PDF بكلمة مرور - تم إصلاح مشكلة PERMISSIONS_ALL"""
+        """تشفير PDF بكلمة مرور"""
         if not password or len(password) < 4:
             raise ValueError("كلمة المرور يجب أن تكون 4 أحرف على الأقل")
             
@@ -135,7 +143,7 @@ class PDFEngine:
             for page in reader.pages:
                 writer.add_page(page)
             
-            # ✅ استخدام الطريقة الصحيحة للتشفير في pypdf 5.0.1
+            # تشفير الملف
             writer.encrypt(password)
             
             out_path = Path(Config.TEMP_DIR) / f"encrypted_{os.urandom(4).hex()}.pdf"
@@ -149,22 +157,21 @@ class PDFEngine:
 
     @staticmethod
     def compress(pdf_path: str) -> Tuple[str, int, int]:
-        """ضغط ملف PDF - تم إصلاح مشكلة الضغط"""
+        """ضغط ملف PDF"""
         try:
             before = os.path.getsize(pdf_path)
             
-            # ✅ طريقة الضغط الصحيحة باستخدام PyMuPDF (fitz)
+            # استخدام PyMuPDF للضغط
             doc = fitz.open(pdf_path)
             
-            # حفظ الملف بضغط عالي
             out_path = Path(Config.TEMP_DIR) / f"compressed_{os.urandom(4).hex()}.pdf"
             
-            # ✅ استخدام save مع خيارات الضغط
+            # حفظ مع خيارات الضغط
             doc.save(
                 str(out_path),
-                garbage=4,           # تنظيف عميق
-                deflate=True,        # ضغط
-                clean=True,          # تنظيف البيانات غير المستخدمة
+                garbage=4,
+                deflate=True,
+                clean=True,
                 no_encrypt=True
             )
             doc.close()
@@ -172,7 +179,7 @@ class PDFEngine:
             after = os.path.getsize(out_path)
             
             # إذا كان الضغط أكبر من الأصلي، استخدم الأصلي
-            if after > before:
+            if after >= before:
                 safe_remove(str(out_path))
                 return pdf_path, before, before
                 
@@ -212,6 +219,7 @@ class PDFEngine:
                     resolution=100.0
                 )
             
+            # تنظيف الذاكرة
             for img in images:
                 img.close()
                 
@@ -237,6 +245,7 @@ class PDFEngine:
                 doc.close()
                 return img_data, "صفحة_1.jpg"
             
+            # عدة صفحات - إنشاء ZIP
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, page in enumerate(doc, 1):
@@ -257,8 +266,11 @@ class PDFEngine:
         try:
             reader = PdfReader(pdf_path)
             total_pages = len(reader.pages)
-            writer = PdfWriter()
             
+            if total_pages == 0:
+                raise ValueError("الملف فارغ")
+                
+            writer = PdfWriter()
             delete_set = set(pages_to_delete)
             
             for i in range(total_pages):
@@ -282,10 +294,15 @@ class PDFEngine:
         """استخراج صفحات محددة من PDF"""
         try:
             reader = PdfReader(pdf_path)
+            total_pages = len(reader.pages)
+            
+            if total_pages == 0:
+                raise ValueError("الملف فارغ")
+                
             writer = PdfWriter()
             
             for page_num in page_range:
-                if 1 <= page_num <= len(reader.pages):
+                if 1 <= page_num <= total_pages:
                     writer.add_page(reader.pages[page_num - 1])
             
             if len(writer.pages) == 0:
@@ -313,8 +330,9 @@ class PDFEngine:
             # محاولة فك التشفير (بدون كلمة مرور)
             try:
                 reader.decrypt('')
-            except:
-                raise ValueError("الملف مشفر بكلمة مرور غير معروفة")
+            except Exception:
+                # إذا فشل فك التشفير بدون كلمة مرور
+                raise ValueError("الملف مشفر بكلمة مرور، لا يمكن إزالتها بدونها")
             
             writer = PdfWriter()
             for page in reader.pages:
@@ -328,3 +346,36 @@ class PDFEngine:
         except Exception as e:
             logger.error(f"خطأ في إزالة الحماية: {e}")
             raise ValueError(f"فشل إزالة الحماية: {str(e)}")
+
+    @staticmethod
+    def split_by_page(pdf_path: str, pages_per_file: int = 1) -> List[str]:
+        """تقسيم PDF إلى عدة ملفات حسب عدد الصفحات"""
+        try:
+            reader = PdfReader(pdf_path)
+            total_pages = len(reader.pages)
+            
+            if total_pages == 0:
+                raise ValueError("الملف فارغ")
+                
+            if pages_per_file <= 0:
+                raise ValueError("عدد الصفحات يجب أن يكون أكبر من 0")
+                
+            output_paths = []
+            
+            for start in range(0, total_pages, pages_per_file):
+                writer = PdfWriter()
+                end = min(start + pages_per_file, total_pages)
+                
+                for i in range(start, end):
+                    writer.add_page(reader.pages[i])
+                
+                out_path = Path(Config.TEMP_DIR) / f"split_{start+1}_{end}_{os.urandom(4).hex()}.pdf"
+                with open(out_path, "wb") as f:
+                    writer.write(f)
+                output_paths.append(str(out_path))
+            
+            return output_paths
+            
+        except Exception as e:
+            logger.error(f"خطأ في تقسيم الملف: {e}")
+            raise ValueError(f"فشل تقسيم الملف: {str(e)}")
