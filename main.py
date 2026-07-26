@@ -87,18 +87,55 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     session.action = action_text
     session.last_active = time.time()
-
+    
+    # ✅ تم إصلاح تكرار prompts
     prompts = {
-    "📎 دمج PDF": "📤 أرسل ملفات PDF واحدة تلو الأخرى، ثم اضغط 'إنهاء العملية'",
-    "🖼️ صور لـ PDF": "🖼️ أرسل الصور كملفات (Documents) وليس كصور (Photos)\nاختر 'إرسال كملف' من قائمة المشاركة\nأرسلها واحدة تلو الأخرى\nثم اضغط 'إنهاء العملية'",
-    "📸 استخراج صور": "📄 أرسل ملف PDF لاستخراج الصور",
-    "🔢 ترقيم الصفحات": "📄 أرسل ملف PDF لإضافة أرقام الصفحات",
-    "✂️ تقسيم": "📄 أرسل ملف PDF للتقسيم (مثال: 1-5,7,10)",
-    "🗑️ حذف صفحات": "📄 أرسل ملف PDF لحذف صفحات (مثال: 1,3-5,8)",
-    "📉 ضغط": "📄 أرسل ملف PDF للضغط",
-    "🔒 حماية": "📄 أرسل ملف PDF ثم كلمة المرور",
-    "🔓 إزالة الحماية": "📄 أرسل ملف PDF مشفر"
-}
+        "📎 دمج PDF": "📤 أرسل ملفات PDF واحدة تلو الأخرى، ثم اضغط 'إنهاء العملية'",
+        "🖼️ صور لـ PDF": "🖼️ أرسل الصور كملفات (Documents) وليس كصور (Photos)\nاختر 'إرسال كملف' من قائمة المشاركة\nأرسلها واحدة تلو الأخرى\nثم اضغط 'إنهاء العملية'",
+        "📸 استخراج صور": "📄 أرسل ملف PDF لاستخراج الصور",
+        "🔢 ترقيم الصفحات": "📄 أرسل ملف PDF لإضافة أرقام الصفحات",
+        "✂️ تقسيم": "📄 أرسل ملف PDF للتقسيم (مثال: 1-5,7,10)",
+        "🗑️ حذف صفحات": "📄 أرسل ملف PDF لحذف صفحات (مثال: 1,3-5,8)",
+        "📉 ضغط": "📄 أرسل ملف PDF للضغط",
+        "🔒 حماية": "📄 أرسل ملف PDF ثم كلمة المرور",
+        "🔓 إزالة الحماية": "📄 أرسل ملف PDF مشفر"
+    }
+    
+    await update.message.reply_text(
+        prompts.get(action_text, "📤 أرسل الملف المطلوب"),
+        reply_markup=ACTION_MENU
+    )
+    return WAIT_FILE
+
+async def receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    session = user_sessions.get(uid)
+    if not session:
+        return await start(update, context)
+    session.last_active = time.time()
+
+    if update.message.text:
+        text = update.message.text
+        
+        if text == "❌ إلغاء":
+            for file_path in session.files:
+                safe_remove(file_path)
+            user_sessions.pop(uid, None)
+            await update.message.reply_text("✅ تم الإلغاء", reply_markup=MAIN_MENU)
+            return SELECT_ACTION
+        
+        if text == "✅ إنهاء العملية":
+            if not session.files:
+                await update.message.reply_text("⚠️ لم ترسل أي ملفات!", reply_markup=ACTION_MENU)
+                return WAIT_FILE
+            
+            data_actions = ["✂️ تقسيم", "🗑️ حذف صفحات", "🔒 حماية"]
+            if session.action in data_actions:
+                prompts = {
+                    "✂️ تقسيم": "📝 أدخل نطاق الصفحات (مثال: 1-5,7,10):",
+                    "🗑️ حذف صفحات": "📝 أدخل الصفحات للحذف (مثال: 1,3-5,8):",
+                    "🔒 حماية": "📝 أدخل كلمة المرور (4 أحرف على الأقل):"
+                }
                 await update.message.reply_text(prompts[session.action], reply_markup=CANCEL_BTN)
                 session.expecting_data = True
                 return WAIT_DATA
