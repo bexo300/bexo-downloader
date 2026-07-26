@@ -6,7 +6,13 @@ load_dotenv()
 
 class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
-    CHANNEL_USERNAME = "@bexo50"
+    
+    # ✅ قائمة المشرفين (معرفات المستخدمين)
+    ADMINS = list(map(int, os.getenv("ADMINS", "").split(","))) if os.getenv("ADMINS") else []
+    
+    # ✅ قنوات الاشتراك الإجباري
+    FORCED_CHANNELS = []  # سيتم تحميلها من قاعدة البيانات أو ملف
+    
     MAX_FILE_SIZE = 50 * 1024 * 1024
     TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
     MAX_SESSION_TIME = 600
