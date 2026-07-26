@@ -1,4 +1,3 @@
-# utils.py
 import os
 import re
 import time
@@ -28,37 +27,28 @@ def set_user_busy(user_id: int, busy: bool = True):
         active_users.discard(user_id)
 
 def clean_old_files():
-    """تنظيف الملفات القديمة بشكل آمن"""
     now = time.time()
     temp_path = Path(Config.TEMP_DIR)
-    
     if not temp_path.exists():
         return
-        
     for file_path in temp_path.iterdir():
         if file_path.is_file():
             try:
                 if now - file_path.stat().st_mtime > Config.MAX_FILE_AGE:
                     file_path.unlink()
-                    logger.debug(f"🗑️ حذف ملف قديم: {file_path.name}")
-            except Exception as e:
-                logger.warning(f"لم نتمكن من حذف {file_path.name}: {e}")
+            except Exception:
+                pass
 
 def validate_page_range(range_str: str, total: int) -> list:
-    """التحقق من صحة نطاق الصفحات"""
     if not range_str:
         raise ValueError("أدخل نطاق الصفحات")
-    
     pages = set()
     range_str = range_str.replace(" ", "")
-    
     if not range_str:
         raise ValueError("النطاق فارغ")
-        
     for part in range_str.split(","):
         if not part:
             continue
-            
         if "-" in part:
             try:
                 s, e = map(int, part.split("-"))
@@ -75,14 +65,11 @@ def validate_page_range(range_str: str, total: int) -> list:
                 pages.add(p)
             except ValueError:
                 raise ValueError(f"قيمة غير صالحة: {part}")
-    
     if not pages:
         raise ValueError("لم يتم تحديد أي صفحات صالحة")
-        
     return sorted(pages)
 
 def format_size(size: int) -> str:
-    """تنسيق حجم الملف"""
     if size < 1024:
         return f"{size} ب"
     elif size < 1024 * 1024:
@@ -93,35 +80,24 @@ def format_size(size: int) -> str:
         return f"{size / (1024 * 1024 * 1024):.2f} جيجابايت"
 
 def sanitize_filename(filename: str) -> str:
-    """تنظيف اسم الملف من الأحرف الخطيرة"""
     if not filename:
         return "ملف"
-    
-    # إزالة الأحرف غير المسموحة
     filename = re.sub(r'[\\/*?:"<>|]', "", filename)
     filename = re.sub(r'\s+', " ", filename).strip()
-    
-    # الحد من طول الاسم
-    if len(filename) > 100:
-        filename = filename[:100]
-        
     return filename or "ملف"
 
 def safe_remove(file_path: str) -> bool:
-    """حذف ملف بشكل آمن"""
     try:
         if os.path.exists(file_path):
             os.remove(file_path)
             return True
-    except Exception as e:
-        logger.warning(f"لم نتمكن من حذف {file_path}: {e}")
+    except Exception:
+        pass
     return False
 
 def ensure_dir(path: str) -> bool:
-    """إنشاء المجلد إذا لم يكن موجوداً"""
     try:
         os.makedirs(path, exist_ok=True)
         return True
-    except Exception as e:
-        logger.error(f"فشل إنشاء المجلد {path}: {e}")
+    except Exception:
         return False
