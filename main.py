@@ -1,3 +1,5 @@
+# main.py - النسخة النهائية الكاملة مع الاشتراك الإجباري الثابت
+
 import os
 import time
 from pathlib import Path
@@ -20,7 +22,7 @@ from admin import (
     AdminSystem, admin_panel, admin_callback_handler, 
     add_channel_handler, ADD_CHANNEL
 )
-from subscription import check_subscription, check_subscription_callback
+from subscription import check_subscription, check_subscription_callback, SubscriptionSystem
 from pypdf import PdfReader
 
 Config.ensure_dirs()
@@ -55,10 +57,11 @@ async def cleanup_task(context: ContextTypes.DEFAULT_TYPE):
                 safe_remove(file_path)
             user_sessions.pop(uid, None)
 
+# ✅ دالة start مع التحقق من الاشتراك الإجباري
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     
-    # ✅ التحقق من الاشتراك الإجباري (المشرف يتجاوز)
+    # ✅ التحقق من الاشتراك (يشمل القناة الثابتة)
     if not await check_subscription(update, context):
         return SELECT_ACTION
     
@@ -89,6 +92,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await admin_panel(update, context)
     return SELECT_ACTION
 
+# ✅ دالة choose_action مع التحقق من الاشتراك الإجباري
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     action_text = update.message.text
@@ -101,7 +105,7 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await admin_panel(update, context)
         return SELECT_ACTION
     
-    # ✅ التحقق من الاشتراك (المشرف يتجاوز)
+    # ✅ التحقق من الاشتراك (يشمل القناة الثابتة)
     if not await check_subscription(update, context):
         return SELECT_ACTION
     
@@ -221,10 +225,11 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return WAIT_FILE
 
+# ✅ دالة receive_files مع التحقق من الاشتراك الإجباري
 async def receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     
-    # ✅ التحقق من الاشتراك (المشرف يتجاوز)
+    # ✅ التحقق من الاشتراك (يشمل القناة الثابتة)
     if not await check_subscription(update, context):
         return SELECT_ACTION
     
@@ -462,7 +467,9 @@ def main():
         logger.error("❌ BOT_TOKEN غير موجود")
         return
     
+    # ✅ تحميل القنوات الإضافية
     Config.FORCED_CHANNELS = AdminSystem.load_channels()
+    
     app = ApplicationBuilder().token(Config.BOT_TOKEN).build()
     
     # ✅ معالج لوحة التحكم
@@ -502,8 +509,12 @@ def main():
     app.add_error_handler(global_error_handler)
     app.job_queue.run_repeating(cleanup_task, interval=Config.CLEANUP_INTERVAL, first=10)
     
+    # ✅ عرض معلومات التشغيل
     logger.info("🚀 البوت يعمل!")
     logger.info(f"👑 عدد المشرفين: {len(Config.ADMINS)}")
+    logger.info(f"🔒 القناة الثابتة: @{Config.FORCED_CHANNEL}")
+    logger.info(f"📢 قنوات إضافية: {len(Config.FORCED_CHANNELS)}")
+    
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
