@@ -1,4 +1,3 @@
-# pdf_engine.py - النسخة النهائية المصححة بالكامل
 import os
 import io
 import zipfile
@@ -57,7 +56,6 @@ class PDFEngine:
             doc = fitz.open(pdf_path)
             
             for i, page in enumerate(doc, 1):
-                # تحديد موقع الرقم في أسفل الصفحة
                 rect = fitz.Rect(
                     page.rect.width * 0.45, 
                     page.rect.height - 40, 
@@ -103,7 +101,7 @@ class PDFEngine:
                     ),
                     text,
                     fontsize=48,
-                    color=(0.6, 0.6, 0.6, 0.25),  # رمادي شفاف
+                    color=(0.6, 0.6, 0.6, 0.25),
                     align=fitz.TEXT_ALIGN_CENTER
                 )
                 
@@ -143,7 +141,6 @@ class PDFEngine:
             for page in reader.pages:
                 writer.add_page(page)
             
-            # تشفير الملف
             writer.encrypt(password)
             
             out_path = Path(Config.TEMP_DIR) / f"encrypted_{os.urandom(4).hex()}.pdf"
@@ -157,22 +154,20 @@ class PDFEngine:
 
     @staticmethod
     def compress(pdf_path: str) -> Tuple[str, int, int]:
-        """ضغط ملف PDF"""
+        """ضغط ملف PDF - تم إصلاح مشكلة no_encrypt"""
         try:
             before = os.path.getsize(pdf_path)
             
-            # استخدام PyMuPDF للضغط
             doc = fitz.open(pdf_path)
             
             out_path = Path(Config.TEMP_DIR) / f"compressed_{os.urandom(4).hex()}.pdf"
             
-            # حفظ مع خيارات الضغط
+            # ✅ تم إزالة no_encrypt - غير مدعومة في بعض الإصدارات
             doc.save(
                 str(out_path),
                 garbage=4,
                 deflate=True,
-                clean=True,
-                no_encrypt=True
+                clean=True
             )
             doc.close()
             
@@ -219,7 +214,6 @@ class PDFEngine:
                     resolution=100.0
                 )
             
-            # تنظيف الذاكرة
             for img in images:
                 img.close()
                 
@@ -245,7 +239,6 @@ class PDFEngine:
                 doc.close()
                 return img_data, "صفحة_1.jpg"
             
-            # عدة صفحات - إنشاء ZIP
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for i, page in enumerate(doc, 1):
@@ -323,15 +316,12 @@ class PDFEngine:
         try:
             reader = PdfReader(pdf_path)
             
-            # التحقق مما إذا كان الملف مشفراً
             if not reader.is_encrypted:
                 raise ValueError("الملف غير مشفر")
             
-            # محاولة فك التشفير (بدون كلمة مرور)
             try:
                 reader.decrypt('')
             except Exception:
-                # إذا فشل فك التشفير بدون كلمة مرور
                 raise ValueError("الملف مشفر بكلمة مرور، لا يمكن إزالتها بدونها")
             
             writer = PdfWriter()
