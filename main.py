@@ -13,7 +13,7 @@ from config import Config
 from utils import (
     logger, set_user_busy, is_user_busy, clean_old_files, 
     validate_page_range, format_size, sanitize_filename, 
-    safe_remove, ensure_dir
+    safe_remove, ensure_dir, ensure_extension  # ✅ إضافة ensure_extension
 )
 from pdf_engine import PDFEngine
 from keyboards import MAIN_MENU, ACTION_MENU, CANCEL_BTN
@@ -58,7 +58,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     user_sessions[uid] = Session()
     welcome_text = "👋 مرحباً بك في بوت PDF الاحترافي!\nاختر الأداة التي تريدها من القائمة أدناه 🚀"
-    await update.message.reply_text(welcome_text, reply_markup=MAIN_MENU)
+    
+    # ✅ عرض زر المشرف فقط للمشرفين
+    if AdminSystem.is_admin(uid):
+        from keyboards import ADMIN_MENU
+        await update.message.reply_text(welcome_text, reply_markup=MAIN_MENU)
+        await update.message.reply_text("👑 لوحة التحكم متاحة لك!", reply_markup=ADMIN_MENU)
+    else:
+        await update.message.reply_text(welcome_text, reply_markup=MAIN_MENU)
+    
     return SELECT_ACTION
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,6 +77,9 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     action_text = update.message.text
     
     if action_text == "👑 لوحة التحكم":
+        if not AdminSystem.is_admin(uid):
+            await update.message.reply_text("❌ عذراً، هذا الأمر مخصص للمشرفين فقط!", reply_markup=MAIN_MENU)
+            return SELECT_ACTION
         return await admin_command(update, context)
     
     if is_user_busy(uid):
@@ -88,13 +99,13 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🖼️ صور لـ PDF": "🖼️ أرسل الصور واحدة تلو الأخرى، ثم اضغط 'إنهاء العملية'",
         "📸 استخراج صور": "📄 أرسل ملف PDF لاستخراج الصور منه",
         "🔢 ترقيم الصفحات": "📄 أرسل ملف PDF لإضافة أرقام الصفحات",
-        "✂️ تقسيم": "📄 أرسل ملف PDF للتقسيم حسب النطاق",
-        "🗑️ حذف صفحات": "📄 أرسل ملف PDF لحذف صفحات محددة",
+        "✂️ تقسيم": "📄 أرسل ملف PDF للتقسيم حسب النطاق (مثال: 1-5,7,10)",
+        "🗑️ حذف صفحات": "📄 أرسل ملف PDF لحذف صفحات محددة (مثال: 1,3-5,8)",
         "📉 ضغط": "📄 أرسل ملف PDF لتقليل حجمه",
-       # "💧 علامة مائية": "📄 أرسل ملف PDF ثم النص الذي تريد وضعه كعلامة مائية",
+        #"💧 علامة مائية": "📄 أرسل ملف PDF ثم النص الذي تريد وضعه كعلامة مائية",
         "🔒 حماية": "📄 أرسل ملف PDF ثم كلمة المرور للتشفير",
-     #   "ℹ️ معلومات": "📄 أرسل ملف PDF لعرض معلوماته",
-     #   "🧹 مسح الملفات": "🗑️ سيتم حذف جميع ملفاتك المؤقتة"
+       # "ℹ️ معلومات": "📄 أرسل ملف PDF لعرض معلوماته",
+        #"🧹 مسح الملفات": "🗑️ سيتم حذف جميع ملفاتك المؤقتة"
     }
     
     prompt = prompts.get(action_text, "📤 أرسل الملف المطلوب")
@@ -141,12 +152,22 @@ async def receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not session.files:
                 await update.message.reply_text("⚠️ لم ترسل أي ملفات بعد!", reply_markup=ACTION_MENU)
                 return WAIT_FILE
+            
+            # ✅ العمليات التي تحتاج بيانات إضافية
             data_actions = ["✂️ تقسيم", "🗑️ حذف صفحات", "💧 علامة مائية", "🔒 حماية"]
             if session.action in data_actions:
-                await update.message.reply_text("✏️ أدخل البيانات المطلوبة:", reply_markup=CANCEL_BTN)
+                # ✅ رسائل مخصصة حسب العملية
+                data_prompts = {
+                    "✂️ تقسيم": "📝 أدخل نطاق الصفحات للاستخراج (مثال: 1-5,7,10):",
+                    "🗑️ حذف صفحات": "📝 أدخل الصفحات المراد حذفها (مثال: 1,3-5,8):",
+                    "💧 علامة مائية": "📝 أرسل النص الذي تريد وضعه كعلامة مائية:",
+                    "🔒 حماية": "📝 أدخل كلمة المرور للتشفير (4 أحرف على الأقل):"
+                }
+                await update.message.reply_text(data_prompts.get(session.action, "✏️ أدخل البيانات المطلوبة:"), reply_markup=CANCEL_BTN)
                 session.expecting_data = True
                 return WAIT_DATA
-            await update.message.reply_text("📝 أرسل اسم الملف النهائي (أو 'تخطي'):", reply_markup=CANCEL_BTN)
+            
+            await update.message.reply_text("📝 أرسل اسم الملف النهائي (أو 'تخطي' للاسم الافتراضي):", reply_markup=CANCEL_BTN)
             session.expecting_name = True
             return WAIT_NAME
         if session.expecting_data:
@@ -158,7 +179,7 @@ async def receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ حجم الملف كبير جداً! الحد الأقصى {format_size(Config.MAX_FILE_SIZE)}", reply_markup=ACTION_MENU)
             return WAIT_FILE
         if document.mime_type not in Config.ALLOWED_TYPES:
-            await update.message.reply_text("❌ نوع الملف غير مدعوم!", reply_markup=ACTION_MENU)
+            await update.message.reply_text("❌ نوع الملف غير مدعوم!\nالمدعوم: PDF, JPEG, PNG, WEBP, BMP, TIFF", reply_markup=ACTION_MENU)
             return WAIT_FILE
         if len(session.files) >= Config.MAX_FILES_PER_SESSION:
             await update.message.reply_text(f"❌ وصلت للحد الأقصى ({Config.MAX_FILES_PER_SESSION}) ملفات!", reply_markup=ACTION_MENU)
@@ -180,15 +201,18 @@ async def receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = user_sessions.get(uid)
     if not session:
         return await start(update, context)
+    
     if update.message.text == "❌ إلغاء":
         for file_path in session.files:
             safe_remove(file_path)
         user_sessions.pop(uid, None)
         await update.message.reply_text("✅ تم إلغاء العملية", reply_markup=MAIN_MENU)
         return SELECT_ACTION
+    
     session.val1 = update.message.text.strip()
     session.expecting_data = False
-    await update.message.reply_text("📝 أرسل اسم الملف النهائي مع الامتدات (.pdf)(أو 'تخطي'):", reply_markup=CANCEL_BTN)
+    
+    await update.message.reply_text("📝 أرسل اسم الملف النهائي (أو 'تخطي' للاسم الافتراضي):", reply_markup=CANCEL_BTN)
     session.expecting_name = True
     return WAIT_NAME
 
@@ -197,14 +221,20 @@ async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = user_sessions.get(uid)
     if not session or not session.files:
         return await start(update, context)
+    
     if update.message.text == "❌ إلغاء":
         for file_path in session.files:
             safe_remove(file_path)
         user_sessions.pop(uid, None)
         await update.message.reply_text("✅ تم إلغاء العملية", reply_markup=MAIN_MENU)
         return SELECT_ACTION
+    
     name = update.message.text.strip()
-    session.custom_name = None if name.lower() == "تخطي" else sanitize_filename(name)
+    if name.lower() == "تخطي":
+        session.custom_name = None
+    else:
+        session.custom_name = sanitize_filename(name)
+    
     session.expecting_name = False
     return await process_work(update, context, session)
 
@@ -215,92 +245,161 @@ async def process_work(update: Update, context: ContextTypes.DEFAULT_TYPE, sessi
         action = session.action
         result_path = None
         extra_info = ""
-        final_name = session.custom_name or {
-            "📎 دمج PDF": "ملفات_مدمجة.pdf", "🖼️ صور لـ PDF": "صور_محولة.pdf",
-            "📸 استخراج صور": "صور_مستخرجة.zip", "🔢 ترقيم الصفحات": "ملف_مرقم.pdf",
-            "📉 ضغط": "ملف_مضغوط.pdf", "💧 علامة مائية": "ملف_بعلامة.pdf",
-            "🔒 حماية": "ملف_محمي.pdf", "✂️ تقسيم": "ملف_مقسم.pdf",
-            "🗑️ حذف صفحات": "ملف_معدل.pdf", "🔓 إزالة الحماية": "ملف_غير_محمي.pdf"
-        }.get(action, "ملف_جديد.pdf")
         
-        await update.message.reply_text("⏳ جاري المعالجة...")
+        # الأسماء الافتراضية
+        default_names = {
+            "📎 دمج PDF": "ملفات_مدمجة.pdf",
+            "🖼️ صور لـ PDF": "صور_محولة.pdf",
+            "📸 استخراج صور": "صور_مستخرجة.zip",
+            "🔢 ترقيم الصفحات": "ملف_مرقم.pdf",
+            "📉 ضغط": "ملف_مضغوط.pdf",
+            "💧 علامة مائية": "ملف_بعلامة.pdf",
+            "🔒 حماية": "ملف_محمي.pdf",
+            "✂️ تقسيم": "ملف_مقسم.pdf",
+            "🗑️ حذف صفحات": "ملف_معدل.pdf",
+            "🔓 إزالة الحماية": "ملف_غير_محمي.pdf"
+        }
         
+        # ✅ معالجة اسم الملف مع إضافة الامتداد التلقائي
+        if session.custom_name:
+            final_name = session.custom_name
+            # ✅ إضافة الامتداد إذا كان مفقوداً
+            if not any(final_name.lower().endswith(ext) for ext in ['.pdf', '.zip', '.jpg', '.jpeg', '.png']):
+                if action == "📸 استخراج صور":
+                    final_name += ".zip"
+                else:
+                    final_name += ".pdf"
+        else:
+            final_name = default_names.get(action, "ملف_جديد.pdf")
+        
+        await update.message.reply_text("⏳ جاري المعالجة... يرجى الانتظار")
+        
+        # تنفيذ العملية
         if action == "📎 دمج PDF":
             result_path = PDFEngine.merge(session.files)
+            
         elif action == "🖼️ صور لـ PDF":
             result_path = PDFEngine.images_to_pdf(session.files)
+            
         elif action == "📸 استخراج صور":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
             result_data, filename = PDFEngine.pdf_to_images(session.files[0])
-            await update.message.reply_document(result_data, filename=filename, caption="✅ تم استخراج الصور!", reply_markup=MAIN_MENU)
+            await update.message.reply_document(
+                result_data, 
+                filename=filename, 
+                caption="✅ تم استخراج الصور بنجاح!", 
+                reply_markup=MAIN_MENU
+            )
             return SELECT_ACTION
+            
         elif action == "🔢 ترقيم الصفحات":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
             result_path = PDFEngine.add_page_numbers(session.files[0])
+            
         elif action == "📉 ضغط":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
             result_path, before_size, after_size = PDFEngine.compress(session.files[0])
             if before_size == after_size:
-                extra_info = "\n⚠️ لم يتغير الحجم"
+                extra_info = "\n⚠️ لم يتغير الحجم (الملف مضغوط بالفعل)"
             else:
                 reduction = (1 - after_size / before_size) * 100
-                extra_info = f"\n📊 {format_size(before_size)} → {format_size(after_size)}\n✅ تخفيض {reduction:.1f}%"
+                extra_info = f"\n📊 {format_size(before_size)} → {format_size(after_size)}\n✅ تم التخفيض بنسبة {reduction:.1f}%"
+                
         elif action == "💧 علامة مائية":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
-            result_path = PDFEngine.add_watermark(session.files[0], session.val1 or "© جميع الحقوق محفوظة")
+            watermark_text = session.val1 or "© جميع الحقوق محفوظة"
+            result_path = PDFEngine.add_watermark(session.files[0], watermark_text)
+            extra_info = f"\n💧 العلامة: {watermark_text}"
+            
         elif action == "🔒 حماية":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
-            result_path = PDFEngine.encrypt(session.files[0], session.val1 or "1234")
-            extra_info = f"\n🔑 كلمة المرور: `{session.val1 or '1234'}`"
+            password = session.val1 or "1234"
+            result_path = PDFEngine.encrypt(session.files[0], password)
+            extra_info = f"\n🔑 كلمة المرور: `{password}`"
+            
         elif action == "✂️ تقسيم":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
-            reader = PdfReader(session.files[0])
-            total_pages = len(reader.pages)
-            page_nums = validate_page_range(session.val1 or "1", total_pages)
-            result_path = PDFEngine.extract_pages(session.files[0], page_nums)
-            extra_info = f"\n📄 استخراج {len(page_nums)} صفحة من {total_pages}"
+            try:
+                reader = PdfReader(session.files[0])
+                total_pages = len(reader.pages)
+                page_nums = validate_page_range(session.val1 or "1", total_pages)
+                result_path = PDFEngine.extract_pages(session.files[0], page_nums)
+                extra_info = f"\n📄 تم استخراج {len(page_nums)} صفحة من {total_pages}"
+            except Exception as e:
+                raise ValueError(f"نطاق الصفحات غير صحيح: {str(e)}")
+            
         elif action == "🗑️ حذف صفحات":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
-            reader = PdfReader(session.files[0])
-            total_pages = len(reader.pages)
-            page_nums = validate_page_range(session.val1 or "1", total_pages)
-            result_path = PDFEngine.delete_pages(session.files[0], page_nums)
-            extra_info = f"\n🗑️ تم حذف {len(page_nums)} صفحة"
+            try:
+                reader = PdfReader(session.files[0])
+                total_pages = len(reader.pages)
+                page_nums = validate_page_range(session.val1 or "1", total_pages)
+                result_path = PDFEngine.delete_pages(session.files[0], page_nums)
+                extra_info = f"\n🗑️ تم حذف {len(page_nums)} صفحة"
+            except Exception as e:
+                raise ValueError(f"نطاق الصفحات غير صحيح: {str(e)}")
+            
         elif action == "🔓 إزالة الحماية":
             if len(session.files) != 1:
                 await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
                 return SELECT_ACTION
             result_path = PDFEngine.remove_password(session.files[0])
-            extra_info = "\n🔓 تم إزالة كلمة المرور"
+            extra_info = "\n🔓 تم إزالة كلمة المرور بنجاح"
+            
+        elif action == "ℹ️ معلومات":
+            if len(session.files) != 1:
+                await update.message.reply_text("❌ يجب إرسال ملف PDF واحد فقط")
+                return SELECT_ACTION
+            metadata = PDFEngine.get_metadata(session.files[0])
+            info_text = (
+                f"📊 **معلومات الملف**\n\n"
+                f"📄 عدد الصفحات: {metadata['pages']}\n"
+                f"📝 العنوان: {metadata['title']}\n"
+                f"✍️ المؤلف: {metadata['author']}\n"
+                f"💾 الحجم: {format_size(metadata['size'])}\n"
+                f"🔒 مشفر: {'نعم' if metadata['encrypted'] else 'لا'}"
+            )
+            await update.message.reply_text(info_text, parse_mode="Markdown", reply_markup=MAIN_MENU)
+            return SELECT_ACTION
         
+        # إرسال النتيجة
         if result_path and os.path.exists(result_path):
             with open(result_path, "rb") as file:
-                await update.message.reply_document(file, filename=final_name, caption=f"✅ تمت العملية{extra_info}", reply_markup=MAIN_MENU)
+                caption = f"✅ تمت العملية بنجاح{extra_info}"
+                await update.message.reply_document(
+                    file, 
+                    filename=final_name, 
+                    caption=caption, 
+                    reply_markup=MAIN_MENU
+                )
             safe_remove(result_path)
         else:
-            await update.message.reply_text("❌ حدث خطأ في معالجة الملف", reply_markup=MAIN_MENU)
+            await update.message.reply_text("❌ حدث خطأ في معالجة الملف، حاول مرة أخرى", reply_markup=MAIN_MENU)
+            
     except Exception as e:
         logger.error(f"خطأ في المعالجة: {e}", exc_info=True)
         await update.message.reply_text(f"❌ خطأ: {str(e)[:200]}", reply_markup=MAIN_MENU)
+        
     finally:
         set_user_busy(uid, False)
         for file_path in session.files:
             safe_remove(file_path)
         user_sessions.pop(uid, None)
+        
     return SELECT_ACTION
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
