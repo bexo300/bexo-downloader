@@ -87,8 +87,7 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     session.action = action_text
     session.last_active = time.time()
-    
-    prompts = {
+
     prompts = {
     "📎 دمج PDF": "📤 أرسل ملفات PDF واحدة تلو الأخرى، ثم اضغط 'إنهاء العملية'",
     "🖼️ صور لـ PDF": "🖼️ أرسل الصور كملفات (Documents) وليس كصور (Photos)\nاختر 'إرسال كملف' من قائمة المشاركة\nأرسلها واحدة تلو الأخرى\nثم اضغط 'إنهاء العملية'",
