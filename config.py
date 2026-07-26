@@ -9,6 +9,10 @@ class Config:
     # ✅ قائمة المشرفين
     ADMINS = list(map(int, os.getenv("ADMINS", "").split(","))) if os.getenv("ADMINS") else []
     
+    # ✅ القناة الإجبارية الدائمة
+    FORCED_CHANNEL = "bexo50"  # ✅ القناة الثابتة
+    FORCED_CHANNELS = []  # سيتم تحميلها من الملف
+    
     MAX_FILE_SIZE = 50 * 1024 * 1024
     TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
     MAX_SESSION_TIME = 600
@@ -19,7 +23,6 @@ class Config:
     SUPPORTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/bmp", "image/tiff"]
     SUPPORTED_DOC_TYPES = ["application/pdf"]
     ALLOWED_TYPES = SUPPORTED_IMAGE_TYPES + SUPPORTED_DOC_TYPES
-    FORCED_CHANNELS = []
 
     @classmethod
     def ensure_dirs(cls):
