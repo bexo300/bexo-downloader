@@ -1,4 +1,4 @@
-# subscription.py
+# subscription.py - مع قناة ثابتة
 import json
 from pathlib import Path
 from typing import List
@@ -12,7 +12,7 @@ CHANNELS_FILE = Path(Config.TEMP_DIR).parent / "channels.json"
 class SubscriptionSystem:
     @staticmethod
     def load_channels() -> List[str]:
-        """تحميل قائمة القنوات من الملف"""
+        """تحميل القنوات الإضافية من الملف"""
         try:
             if CHANNELS_FILE.exists():
                 with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
@@ -24,7 +24,7 @@ class SubscriptionSystem:
     
     @staticmethod
     def save_channels(channels: List[str]) -> bool:
-        """حفظ قائمة القنوات"""
+        """حفظ القنوات الإضافية"""
         try:
             with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
                 json.dump(channels, f, ensure_ascii=False, indent=2)
@@ -35,19 +35,30 @@ class SubscriptionSystem:
             return False
     
     @staticmethod
+    def get_all_channels() -> List[str]:
+        """الحصول على جميع القنوات (الثابتة + الإضافية)"""
+        # ✅ القناة الثابتة + القنوات الإضافية
+        channels = [Config.FORCED_CHANNEL] if Config.FORCED_CHANNEL else []
+        channels += Config.FORCED_CHANNELS
+        # إزالة التكرارات
+        return list(dict.fromkeys(channels))
+    
+    @staticmethod
     def is_admin(user_id: int) -> bool:
         """التحقق من صلاحيات المشرف"""
         return user_id in Config.ADMINS
 
 async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    """التحقق من اشتراك المستخدم في جميع القنوات"""
+    """التحقق من اشتراك المستخدم في جميع القنوات (الثابتة + الإضافية)"""
     user_id = update.effective_user.id
     
-    # المشرفين يتجاوزون التحقق
+    # ✅ المشرفين يتجاوزون التحقق
     if SubscriptionSystem.is_admin(user_id):
         return True
     
-    channels = SubscriptionSystem.load_channels()
+    # ✅ الحصول على جميع القنوات
+    channels = SubscriptionSystem.get_all_channels()
+    
     if not channels:
         return True
     
@@ -123,12 +134,13 @@ async def check_subscription_callback(update: Update, context: ContextTypes.DEFA
     
     user_id = update.effective_user.id
     
-    # المشرفين يتجاوزون التحقق
+    # ✅ المشرفين يتجاوزون التحقق
     if SubscriptionSystem.is_admin(user_id):
         await query.edit_message_text("✅ أنت مشرف، تم تجاوز التحقق!")
         return
     
-    channels = SubscriptionSystem.load_channels()
+    # ✅ الحصول على جميع القنوات
+    channels = SubscriptionSystem.get_all_channels()
     unsubscribed = []
     
     for channel in channels:
