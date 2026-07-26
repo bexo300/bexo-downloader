@@ -188,7 +188,7 @@ async def receive_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return SELECT_ACTION
     session.val1 = update.message.text.strip()
     session.expecting_data = False
-    await update.message.reply_text("📝 أرسل اسم الملف النهائي (أو 'تخطي'):", reply_markup=CANCEL_BTN)
+    await update.message.reply_text("📝 أرسل اسم الملف النهائي مع الامتدات (.pdf)(أو 'تخطي'):", reply_markup=CANCEL_BTN)
     session.expecting_name = True
     return WAIT_NAME
 
