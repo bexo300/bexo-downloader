@@ -1,11 +1,16 @@
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 
+# ✅ القائمة الرئيسية (تم إزالة علامة مائية، مسح الملفات، معلومات)
 MAIN_MENU = ReplyKeyboardMarkup([
     ["📎 دمج PDF", "🖼️ صور لـ PDF"],
     ["📸 استخراج صور", "🔢 ترقيم الصفحات"],
     ["✂️ تقسيم", "🗑️ حذف صفحات"],
-    ["📉 ضغط"],
-    ["🔒 حماية", "🔓 إزالة الحماية"],
+    ["📉 ضغط", "🔒 حماية"],
+    ["🔓 إزالة الحماية"]
+], resize_keyboard=True)
+
+# ✅ قائمة المشرفين
+ADMIN_MENU = ReplyKeyboardMarkup([
     ["👑 لوحة التحكم"]
 ], resize_keyboard=True)
 
