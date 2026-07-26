@@ -17,6 +17,7 @@ from utils import (
 from pdf_engine import PDFEngine
 from keyboards import MAIN_MENU, ACTION_MENU, CANCEL_BTN, ADMIN_MENU
 from admin import AdminSystem, admin_panel, admin_callback_handler
+from subscription import check_subscription, check_subscription_callback
 from pypdf import PdfReader
 
 Config.ensure_dirs()
@@ -53,28 +54,53 @@ async def cleanup_task(context: ContextTypes.DEFAULT_TYPE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    
+    # ✅ التحقق من الاشتراك الإجباري (المشرف يتجاوز)
+    if not await check_subscription(update, context):
+        return SELECT_ACTION
+    
     user_sessions[uid] = Session()
     
     welcome = "👋 مرحباً بك في بوت PDF!\nاختر الأداة من القائمة 🚀"
+    
+    # ✅ عرض القائمة الرئيسية للجميع (بما فيهم المشرف)
     await update.message.reply_text(welcome, reply_markup=MAIN_MENU)
     
+    # ✅ إذا كان مستخدم مشرف، أضف زر لوحة التحكم بشكل منفصل
     if AdminSystem.is_admin(uid):
-        await update.message.reply_text("👑 لوحة التحكم متاحة!", reply_markup=ADMIN_MENU)
+        await update.message.reply_text(
+            "👑 مرحباً أيها المشرف!\n"
+            "يمكنك استخدام البوت كالمستخدم العادي،\n"
+            "وزر لوحة التحكم موجود أدناه للإدارة.",
+            reply_markup=ADMIN_MENU
+        )
     
     return SELECT_ACTION
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر /admin - فتح لوحة التحكم"""
+    uid = update.effective_user.id
+    if not AdminSystem.is_admin(uid):
+        await update.message.reply_text("❌ هذا الأمر مخصص للمشرفين فقط!", reply_markup=MAIN_MENU)
+        return SELECT_ACTION
     await admin_panel(update, context)
+    return SELECT_ACTION
 
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     action_text = update.message.text
     
+    # ✅ إذا كان المشرف وضغط على زر لوحة التحكم
     if action_text == "👑 لوحة التحكم":
         if not AdminSystem.is_admin(uid):
             await update.message.reply_text("❌ غير مصرح!", reply_markup=MAIN_MENU)
             return SELECT_ACTION
-        return await admin_command(update, context)
+        await admin_panel(update, context)
+        return SELECT_ACTION
+    
+    # ✅ التحقق من الاشتراك (المشرف يتجاوز)
+    if not await check_subscription(update, context):
+        return SELECT_ACTION
     
     if is_user_busy(uid):
         await update.message.reply_text("⏳ عملية جارية...", reply_markup=MAIN_MENU)
@@ -96,7 +122,7 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "2️⃣ كل ملف يظهر كـ '✅ تم الاستلام'\n"
             "3️⃣ بعد إرسال جميع الملفات، اضغط 'إنهاء العملية'\n"
             "4️⃣ اختر اسم الملف النهائي\n\n"
-            "📌 ملاحظة: سيتم دمج الملفات بترتيب إرسالها"
+            "📌 سيتم دمج الملفات بترتيب إرسالها"
         ),
         
         "🖼️ صور لـ PDF": (
@@ -125,7 +151,7 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "1️⃣ أرسل ملف PDF واحد فقط\n"
             "2️⃣ اضغط 'إنهاء العملية'\n"
             "3️⃣ اختر اسم الملف النهائي\n\n"
-            "📌 النتيجة: سيتم إضافة أرقام الصفحات في أسفل كل صفحة"
+            "📌 سيتم إضافة أرقام الصفحات في أسفل كل صفحة"
         ),
         
         "✂️ تقسيم": (
@@ -185,7 +211,6 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     }
     
-    # ✅ إرسال التعليمات
     await update.message.reply_text(
         prompts.get(action_text, "📤 أرسل الملف المطلوب"),
         parse_mode="Markdown",
@@ -195,6 +220,11 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def receive_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
+    
+    # ✅ التحقق من الاشتراك (المشرف يتجاوز)
+    if not await check_subscription(update, context):
+        return SELECT_ACTION
+    
     session = user_sessions.get(uid)
     if not session:
         return await start(update, context)
@@ -432,7 +462,13 @@ def main():
     Config.FORCED_CHANNELS = AdminSystem.load_channels()
     app = ApplicationBuilder().token(Config.BOT_TOKEN).build()
     
+    # ✅ معالج لوحة التحكم
     app.add_handler(CallbackQueryHandler(admin_callback_handler, pattern="^admin_"))
+    
+    # ✅ معالج التحقق من الاشتراك
+    app.add_handler(CallbackQueryHandler(check_subscription_callback, pattern="check_subscription"))
+    
+    # ✅ أمر /admin
     app.add_handler(CommandHandler("admin", admin_command))
     
     conv = ConversationHandler(
@@ -452,6 +488,7 @@ def main():
     app.job_queue.run_repeating(cleanup_task, interval=Config.CLEANUP_INTERVAL, first=10)
     
     logger.info("🚀 البوت يعمل!")
+    logger.info(f"👑 عدد المشرفين: {len(Config.ADMINS)}")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
