@@ -16,7 +16,10 @@ from utils import (
 )
 from pdf_engine import PDFEngine
 from keyboards import MAIN_MENU, ACTION_MENU, CANCEL_BTN, ADMIN_MENU
-from admin import AdminSystem, admin_panel, admin_callback_handler
+from admin import (
+    AdminSystem, admin_panel, admin_callback_handler, 
+    add_channel_handler, ADD_CHANNEL
+)
 from subscription import check_subscription, check_subscription_callback
 from pypdf import PdfReader
 
@@ -63,7 +66,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome = "👋 مرحباً بك في بوت PDF!\nاختر الأداة من القائمة 🚀"
     
-    # ✅ عرض القائمة الرئيسية للجميع (بما فيهم المشرف)
+    # ✅ عرض القائمة الرئيسية للجميع
     await update.message.reply_text(welcome, reply_markup=MAIN_MENU)
     
     # ✅ إذا كان مستخدم مشرف، أضف زر لوحة التحكم بشكل منفصل
@@ -471,6 +474,18 @@ def main():
     # ✅ أمر /admin
     app.add_handler(CommandHandler("admin", admin_command))
     
+    # ✅ محادثة إضافة قناة
+    add_channel_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(lambda u, c: ADD_CHANNEL, pattern="admin_add_channel")],
+        states={
+            ADD_CHANNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_channel_handler)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_user=True
+    )
+    app.add_handler(add_channel_conv)
+    
+    # ✅ المحادثة الرئيسية
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start), CommandHandler("cancel", cancel)],
         states={
