@@ -1,3 +1,4 @@
+# keyboards.py
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 
 MAIN_MENU = ReplyKeyboardMarkup([
@@ -14,5 +15,21 @@ ACTION_MENU = ReplyKeyboardMarkup([
     ["❌ إلغاء"]
 ], resize_keyboard=True)
 
-BACK_BTN = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ رجوع", callback_data="back")]])
-CANCEL_BTN = InlineKeyboardMarkup([[InlineKeyboardButton("❌ إلغاء", callback_data="cancel")]])
+BACK_BTN = InlineKeyboardMarkup([
+    [InlineKeyboardButton("⬅️ رجوع", callback_data="back")]
+])
+
+CANCEL_BTN = InlineKeyboardMarkup([
+    [InlineKeyboardButton("❌ إلغاء", callback_data="cancel")]
+])
+
+# أزرار إضافية للعمليات المتقدمة
+PAGE_NUMBER_MENU = ReplyKeyboardMarkup([
+    ["📄 كل الصفحات", "📝 نطاق مخصص"],
+    ["❌ إلغاء"]
+], resize_keyboard=True)
+
+COMPRESS_QUALITY_MENU = ReplyKeyboardMarkup([
+    ["📊 ضغط عالي", "📈 ضغط متوسط"],
+    ["📉 ضغط منخفض", "❌ إلغاء"]
+], resize_keyboard=True)
