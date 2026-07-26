@@ -1,4 +1,3 @@
-# keyboards.py
 from telegram import ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 
 MAIN_MENU = ReplyKeyboardMarkup([
@@ -8,7 +7,7 @@ MAIN_MENU = ReplyKeyboardMarkup([
     ["📉 ضغط", "💧 علامة مائية"],
     ["🔒 حماية", "🔓 إزالة الحماية"],
     ["ℹ️ معلومات", "🧹 مسح الملفات"],
-    ["👑 لوحة التحكم"]  # ✅ زر المشرف
+    ["👑 لوحة التحكم"]
 ], resize_keyboard=True)
 
 ACTION_MENU = ReplyKeyboardMarkup([
